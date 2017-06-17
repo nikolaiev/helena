@@ -48,38 +48,36 @@ module.exports=function(app){
 	share_obj.user_tokens=user_tokens;
 	
 	//================CHAT SERVER===========================
-	require(__dirname+'/../helena/chatServerHTTPS.js')(share_obj);
+	//require(__dirname+'/../helena/chatServerHTTPS.js')(share_obj);
 	//================VIDEO SERVER===========================
-	require(__dirname+'/../helena/videoWebRTCServerHTTPS.js')(app);
+	//require(__dirname+'/../helena/videoWebRTCServerHTTPS.js')(app);
+
 	//================MAIL SERVER==========
 	console.log('++++++++++++++++++++++++++++++++++++++')
-	require(__dirname+'/../helena/helenaServer.js')(share_obj);
+	//require(__dirname+'/../helena/helenaServer.js')(share_obj);
 	//=================HELENA ONLINE SERVER!
 	
-	console.log('-----------------------------------')
-	require(__dirname+'/../helena/userInfoServer.js')(app);
+	//console.log('-----------------------------------')
+	//require(__dirname+'/../helena/userInfoServer.js')(app);
 	
 	share_obj.admin_sockets=io;
 	//================DATES SERVER==========================
+
 	require(__dirname+'/../helena/datesServerHTTPS.js')(share_obj);
 	
 	
 	
 	conString='pg://'+helenConfig.dataBase.admin+':'+helenConfig.dataBase.pass+'@'+helenConfig.dataBase.host+':'+helenConfig.dataBase.port+'/'+helenConfig.dataBase.dbname;
-	
-	console.log(client);
 	client= new pg.Client(conString);
 	client.connect();
 	
 	monitorUsersTokens();
 	setInterval(monitorUsersTokens,TOKENS_CHECK_PERIOD);
-		
 
-	
 
 	function monitorUsersTokens(){
 		user_tokens.actual=new Promise((resolve,reject)=>{
-			var _q="select json_agg(row_to_json(q.*)) from (select user_id::text,balance from public.user_balance_short_view)q";
+			let _q="select json_agg(row_to_json(q.*)) from (select user_id::text,balance from public.user_balance_short_view)q";
 			if(!client){
 				client=new pg.Client(conString);
 				client.connect();
@@ -99,7 +97,7 @@ module.exports=function(app){
 				}
 			})
 			.on('error',function(err){
-				console.log(err);
+				console.log("newHelenaServer.js "+err);
 				delete user_tokens.actual;
 				resolve();
 				

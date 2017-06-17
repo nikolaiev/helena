@@ -1,51 +1,62 @@
 "use strict";
-var pg = require('pg');
-var session = require('cookie-session')({secret: 'securedsession'});
-var cookieParser = require('cookie-parser')();
+const pg = require('pg');
+const session = require('cookie-session')({secret: 'securedsession'});
+const cookieParser = require('cookie-parser')();
 
-var io;
-var conString;//global connection string
-var client;// global connection client
+let io;
+let conString;//global connection string
+let client;// global connection client
 
-var actual_dates = {};//acceprted and acceptable
-var concrete_user_dates = {};//[uid] all info
-var establish_connection = {};//have to establish connection!
-var current_partners = {};//established connection!
+const actual_dates = {};//acceprted and acceptable
+const concrete_user_dates = {};//[uid] all info
+const establish_connection = {};//have to establish connection!
+const current_partners = {};//established connection!
 
-var videodates_windows = {};//list of videodates!
-var user_tokens = {};//[man_id]=tokens avaliable
-var roomDataObject = {};//users in room (with admins)
+const videodates_windows = {};//list of videodates!
+let user_tokens = {};//[man_id]=tokens avaliable
+const roomDataObject = {};//users in room (with admins)
 
-var rateChatType = {};//price for service
-
-var admin_sockets_server;//socket for ADMIN.HELENA (crm)
+let admin_sockets_server;//socket for ADMIN.HELENA (crm)
+let server;
 
 //var fullRateType;//full rate list
 
-const MONITOR_ROOM_TOKENS_INTERVAL = 60 * 1000;
-const TIME_FOR_VIDEO_DATE = 1 * 60 * 1000;
-var server;
+const rateChatType = {};//price for service
 
+const MONITOR_ROOM_TOKENS_INTERVAL = 60 * 1000;
+const TIME_FOR_VIDEO_DATE = 60 * 1000;
+
+
+const log = require("./collor-logger");
+
+
+//TODO remove http server ! Leave only https one
 module.exports = function (share_obj) {
 
-    var app = share_obj.app;
+    let app = share_obj.app;
     user_tokens = share_obj.user_tokens;
     admin_sockets_server = share_obj.admin_sockets;
 
-    var parsedJSON = require(app.dir + '/config/configServer.json');
-    var dateConf = parsedJSON.videoDateServ;
+    let parsedJSON = require(app.dir + '/config/configServer.json');
+    let dateConf = parsedJSON.videoDateServ;
 
-    var PORT = dateConf.server.portHTTPS;
-    var PORTHTTP = dateConf.server.portHTTP;
+    let PORT = dateConf.server.portHTTPS;
+    let PORTHTTP = dateConf.server.portHTTP;
+
     conString = 'pg://' + dateConf.dataBase.admin + ':' + dateConf.dataBase.pass + '@' + dateConf.dataBase.host + ':' + dateConf.dataBase.port + '/' + dateConf.dataBase.dbname;
+
+    log.info("DB constring " + conString);
+
+
     client = new pg.Client(conString);
 
     client.connect((err) => {
         if (err) {
-            console.log('error datesServer p 12343');
-            console.log(err)
+            log.error(err)
         }
+
         getChatRate();
+
         actual_dates._modyfing = new Promise(function (resolve, reject) {
             getAllDates(resolve, reject)
         });
@@ -53,113 +64,128 @@ module.exports = function (share_obj) {
 
     server = require('https').createServer(app.secureOptions, app);
     const serverHttp = require('http').createServer(app);
-
     io = require('socket.io').listen(server);
-    io.attach(serverHttp)
+    /*WTF??*/
+
+    io.attach(serverHttp);
     io.set("transports", ["xhr-polling", "polling", 'websocket']);
 
     io.use(function (socket, next) {
-        var req = socket.handshake;
-        var res = {};
+        let req = socket.handshake;
+        let res = {};
         cookieParser(req, res, function (err) {
             if (err) return next(err);
             session(req, res, next);
         });
     });
 
-//startign server
+
     server.listen(PORT, function () {
-        console.log('dates server listening at ' + PORT);
+        log.info("http Server started at "+PORT)
     });
     serverHttp.listen(PORTHTTP, function() {
-        console.log('dates server listening at ' + PORTHTTP);
-    })
+        log.info("https Server started at "+PORTHTTP)
+    });
 
-//=========WORK WITH SOCKETS
+
+
+    //=========SOCKETS
     io.sockets.on('connection', function (socket) {
 
+        let userSex;
+        let userId;
+        let referer;
+
         try {
-            var referer = socket.request.headers.referer;
-            var user_id = socket.handshake.session.passport.user.user_id.toString();
-            var sex = socket.handshake.session.passport.user.sex.toString();
-            var user_name = socket.handshake.session.passport.user.firstname.toString();
+            referer = socket.request.headers.referer;
+            userId = socket.handshake.session.passport.user.user_id.toString();
+            userSex = socket.handshake.session.passport.user.sex.toString();
+
+            log.info("User connected");
+            log.info("referer : " + referer);
+            log.info("userId : " + userId);
+            log.info("userSex : " + userSex);
         }
         catch (e) {
-            if (typeof user_id == 'undefined') {
-                user_id = 'admin' + Math.ceil(Math.random() * 100);
-                sex = 3;//admin
-                //return;
+            if (userId === undefined) {
+                userId = 'admin' + new Date().getMilliseconds();
+                userSex = 3;//admin
             }
         }
 
-        socket.join(user_id);
+        socket.join(userId);
 
-        /*socket.on('error',function(err){
-         console.log('dateServer socket error ',err);
-         });*/
 
         socket.on('id event', function (data) {
-            console.log('id event');
-            //debugger;
-            if (data.type == 'browser')
-                sendActualTimers(user_id, sex);
-            else if (data.type == 'videoWindow') {
-                //debugger
-                videodates_windows[user_id] = videodates_windows[user_id] ? videodates_windows[user_id] : 0;
-                ++videodates_windows[user_id];
-                sendActualPartnerInfo(user_id, sex);
+            if (data.type === 'browser') {
+                log.info('id event browser with id '+userId);
+                sendActualTimers(userId, userSex);
+            }
+            else if (data.type === 'videoWindow') {
+
+                log.info('id event videoWindow with id '+userId);
+                videodates_windows[userId] = videodates_windows[userId]!==undefined ? videodates_windows[userId] : 1;
+
+                sendActualPartnerInfo(userId, userSex);
+
                 //next function drops if vdate is not actual;
-                sendRoomToOpen(user_id, sex);
+                sendRoomToOpen(userId, userSex);
+
                 //for men only
-                if (sex == '1') {
-                    io.sockets.in(user_id).emit('credits left', {'tokens': user_tokens[user_id]})
+                if (userSex === '1') {
+                    log.info("Man connected to videoDate with id "+id);
+                    io.sockets.in(userId).emit('credits left', {'tokens': user_tokens[userId]})
                 }
             }
             else if (data.type = 'videoAnonWindow') {
-                console.log('videodateAnonLogic');
+                log.warn("admin started video-spy page");
             }
         });
 
         socket.on('ask for dating', function (data) {
-            console.log('ask for dating event ', data);
-            var _data = {};
-            var address = data.user_id ? data.user_id : user_id;
+            log.warn("Someone asks for dating");
+            const _data = {};
+            const address = data.user_id ? data.user_id : userId;
             io.sockets.in(address).emit('video date appointment invitation', _data)
         });
 
         socket.on('someone accepted video date', function (data) {
-            console.log('someone accepted video date');
-            var user_id = data.who.toString();//user_id
-            var from_whom = data.from.toString();//inviter
+            log.warn('Someone accepted video date');
+            let user_id = data.who.toString();//user_id
+            let from_whom = data.from.toString();//inviter
+
             actual_dates._modyfing = new Promise(getAllDates);
             io.sockets.in(from_whom).emit('video date acceptance', {'user_id': user_id})
         });
 
         socket.on('someone refused video date', function (data) {
-            console.log('someone refused video date ', data);
-            var who = data.who.toString();
-            var from_whom = data.from.toString();
+            log.warn('Someone refused video date ', data);
+            const who = data.who.toString();
+            const from_whom = data.from.toString();
+
             concrete_user_dates[who].actual = false;
             concrete_user_dates[from_whom].actual = false;
+
             io.sockets.in(from_whom).emit('video date refusement', {'user_id': who});
 
             //man wants tokens back!
-            var man_id = sex == "1" ? user_id : from_whom;
-            var woman_id = sex == "2" ? user_id : from_whom;
+            const man_id = userSex === "1" ? userId : from_whom;
+            const woman_id = userSex === "2" ? userId : from_whom;
 
-            var _data = {
+            const _data = {
                 'user_id': man_id,
                 'tokens': rateChatType[4],
                 'woman_id': woman_id
             };
+
             //db operations
             returnTokens(_data)
         });
 
         socket.on('someone changed video date time', function (data) {
-            console.log('someone changed video date ', data);
-            var who = data.who.toString();
-            var from_whom = data.from.toString();
+            log.warn('Someone changed video date ');
+            const who = data.who.toString();
+            const from_whom = data.from.toString();
 
 
             concrete_user_dates[who] = concrete_user_dates[who] ? concrete_user_dates[who] : {};
@@ -172,55 +198,52 @@ module.exports = function (share_obj) {
         });
 
         socket.on('request for date beginning', function (data) {
-            console.log('request for date beginning');
-            if (!videodates_windows[user_id] || videodates_windows[user_id].length == 0) {
-                openVideodateWindow(data, user_id, sex);
+            log.info('Opening user\'s videodate window');
+
+            if (videodates_windows[userId]===undefined ||
+                videodates_windows[userId].length === 0) {
+                openVideodateWindow(data, userId, userSex);
             }
         });
 
         //data manipulation on video_date start
         socket.on('video started', function (room) {
-            console.log('video started')
-            console.log('user_id');
-            console.log(user_id);
-            console.log('room');
-            console.log(room);
-            console.log()
-            console.log()
-            console.log()
-            console.log()
-            console.log()
 
-            if (!room)
+            if (room===undefined)
                 return;
-            console.log('video started' + room);
-            //debugger;
-            roomDataObject[room] = roomDataObject[room] ? roomDataObject[room] : {};
+
+            roomDataObject[room] = roomDataObject[room]===undefined ? roomDataObject[room] : {};
+
             //check for done videodate
             if (roomDataObject[room].dateEnd) {
-                console.log('videodate is already ended!');
+                log.error('Videodate is already ended!');
                 socket.emit('close this connection', {'room': room});
                 return;
             }
+
             //check for videodate in process
             if (roomDataObject[room].timersSet) {
-                console.log('all timers is setted');
                 return;
             }
-            console.log('video date started with ', room);
 
-            current_partners[room] = current_partners[room] ? current_partners[room] : [];
-            if (current_partners[room].indexOf(user_id) != -1)
+            log.info('Video started in room ' + room);
+
+
+            current_partners[room] = current_partners[room]===undefined ? current_partners[room] : [];
+
+
+            if (current_partners[room].contains(userId))
                 return;
-            current_partners[room].push(user_id);
-            console.log('array of partners')
-            console.log(current_partners[room]);
 
+            current_partners[room].push(userId);
+
+            /*Remind another partner that date in process!*/
             let _room_obj = {};
             _room_obj.iter = 0;//how many times to remind about videodate
             _room_obj.room = room;
 
 
+            //TODO check code
             //remind about
             let _timer = setInterval(function () {
                 //check for max iterations count or videodate in process
@@ -231,7 +254,7 @@ module.exports = function (share_obj) {
                 _room_obj.iter++;
 
                 if (current_partners[_room_obj.room].length < 2 && !roomDataObject[_room_obj.room]._modyfing)
-                    if (roomDataObject[_room_obj.room].man && roomDataObject[_room_obj.room].man.user_id == user_id) {
+                    if (roomDataObject[_room_obj.room].man && roomDataObject[_room_obj.room].man.user_id === userId) {
                         let _data = {};
                         _data.partner = roomDataObject[_room_obj.room].man;
                         _data.room = _room_obj.room;
@@ -261,22 +284,23 @@ module.exports = function (share_obj) {
             if (current_partners[room].length > 1) {
                 for (let i in current_partners[room])
                     io.sockets.in(current_partners[room][i]).emit('start timer');
-                var _data = {};
-                var man_id;
-                var woman_id;
+                const _data = {};
+                let man_id;
+                let woman_id;
 
-                if (sex == '1') {
-                    man_id = user_id;
+                /*resolve who is who*/
+                if (userSex === '1') {
+                    man_id = userId;
                     for (let i in current_partners[room])
-                        if (current_partners[room][i] != man_id) {
+                        if (current_partners[room][i] !== man_id) {
                             woman_id = current_partners[room][i];
                             break;
                         }
                 }
                 else {
-                    woman_id = user_id;
+                    woman_id = userId;
                     for (let i in current_partners[room])
-                        if (current_partners[room][i].toString() != woman_id) {
+                        if (current_partners[room][i].toString() !== woman_id) {
                             man_id = current_partners[room][i];
                             break;
                         }
@@ -299,16 +323,13 @@ module.exports = function (share_obj) {
                     //debugger;
                     //if still in room - try to eat extra tokens!
                     if (current_partners[_data.room].length > 1) {
-                        console.log('we are calling eatExtraRoomTokens');
+                        log.warn("eatExtraRoomTokens in room "+_data.room);
                         eatExtraRoomTokens(_data.room);//firing firs extra token eating iteration
                     }
                     else {
                         //debugger;
                         logCommEnd(_data.room);
-                        console.log(current_partners[_data.room]);
                         for (let k in current_partners[_data.room]) {
-                            console.log('sending to');
-                            console.log(current_partners[_data.room][k]);
                             io.sockets.in(current_partners[_data.room][k]).emit('close this connection', {'room': _data.room});
                         }
                         //clearInterval(main_timer);
@@ -319,22 +340,14 @@ module.exports = function (share_obj) {
                     //firing eating extra tokens eating process
 
                     let extra_timer = setInterval(function () {
-                        console.log('current_partners');
-                        console.log(_data.room);
-                        console.log(current_partners[_data.room]);
 
                         if (current_partners[_data.room].length <= 1) {
-                            console.log('destroing money eating timer');
                             //if it was not closed!
                             logCommEnd(_data.room);
 
                             if (!roomDataObject[_data.room].dateEnd)
                                 for (let i in current_partners[_data.room]) {
                                     //clearInterval(this);
-                                    console.log(current_partners);
-                                    console.log(_data.room);
-                                    console.log(current_partners[_data.room]);
-                                    console.log(current_partners[_data.room][i]);
                                     io.sockets.in(current_partners[_data.room][i]).emit('close this connection', {'room': _data.room})
                                 }
                             clearInterval(extra_timer);
@@ -347,13 +360,12 @@ module.exports = function (share_obj) {
         });
 
         socket.on('disconnect', () => {
-            //�������
             if (referer && referer.match(/videodate/gi)) {
-                videodates_windows[user_id] = typeof (videodates_windows[user_id]) != 'undefined' ? videodates_windows[user_id] : 1;
-                --videodates_windows[user_id];
-                videodates_windows[user_id] = videodates_windows[user_id] > -1 ? videodates_windows[user_id] : 0;
-                for (var i in current_partners) {
-                    var index = current_partners[i].indexOf(user_id.toString());
+                videodates_windows[userId]=videodates_windows[userId]-1;
+
+                for (let i in current_partners) {
+                    let index = current_partners[i].indexOf(userId);
+
                     if (index > -1) {
                         current_partners[i].splice(index, 1);
                     }
