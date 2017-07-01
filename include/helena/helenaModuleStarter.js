@@ -1,18 +1,18 @@
 const TOKENS_CHECK_PERIOD=1500;
-var user_tokens={};	
-var share_obj={};
-var conString;
-var client;
-var pg=require('pg');
-var io=require('socket.io');
-var session = require('cookie-session')({ secret: 'securedsession' });
-var cookieParser = require('cookie-parser')();
+const user_tokens = {};
+const share_obj = {};
+let conString;
+let client;
+const pg = require('pg');
+let io;
+const session = require('cookie-session')({secret: 'securedsession'});
+const cookieParser = require('cookie-parser')();
 
-
+const log=require("./collor-logger");
 module.exports=function(app){
 	
-	var parsedJSON=require(app.dir+'/config/configServer.json');
-	var helenConfig=parsedJSON.helena_server;
+	const parsedJSON = require(app.dir + '/config/configServer.json');
+	const helenConfig = parsedJSON.helena_server;
 	const PORT=helenConfig.server.portHTTPS;
 	//const PORT=helenConfig.server.portHTTP;
 	
@@ -24,8 +24,8 @@ module.exports=function(app){
 
 	//шарим сокетам данные пасспорта
 	io.use(function(socket, next) {
-		var req = socket.handshake;
-		var res = {};
+		const req = socket.handshake;
+		const res = {};
 		cookieParser(req, res, function(err) {
 			if (err) return next(err);
 			session(req, res, next);
@@ -34,7 +34,7 @@ module.exports=function(app){
 	
 	//запускаем сервер
 	server.listen(PORT,function(){
-		console.log('dates admin server listening at '+PORT);	
+		log.info('dates admin server listening at '+PORT);
 	});
 	
 	//=========WORK WITH ADMIN SOCKETS
@@ -49,12 +49,15 @@ module.exports=function(app){
 	
 	//================CHAT SERVER===========================
 	//require(__dirname+'/../helena/chatServerHTTPS.js')(share_obj);
+
 	//================VIDEO SERVER===========================
-	//require(__dirname+'/../helena/videoWebRTCServerHTTPS.js')(app);
+	require('./videoWebRtcSignaling-Server.js')(app);
+	//require('./videoWebRTCServerHTTPS_old')(app);
 
 	//================MAIL SERVER==========
-	console.log('++++++++++++++++++++++++++++++++++++++')
-	//require(__dirname+'/../helena/helenaServer.js')(share_obj);
+	require('./helenaAdditionalRoutes.js')(share_obj);
+
+
 	//=================HELENA ONLINE SERVER!
 	
 	//console.log('-----------------------------------')
@@ -63,7 +66,7 @@ module.exports=function(app){
 	share_obj.admin_sockets=io;
 	//================DATES SERVER==========================
 
-	require(__dirname+'/../helena/datesServerHTTPS.js')(share_obj);
+	require('./datesServerHTTPS.js')(share_obj);
 	
 	
 	

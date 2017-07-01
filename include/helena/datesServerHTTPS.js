@@ -24,7 +24,9 @@ let server;
 const rateChatType = {};//price for service
 
 const MONITOR_ROOM_TOKENS_INTERVAL = 60 * 1000;
+//const MONITOR_ROOM_TOKENS_INTERVAL = 10;
 const TIME_FOR_VIDEO_DATE = 60 * 1000;
+//const TIME_FOR_VIDEO_DATE = 25;
 
 
 const log = require("./collor-logger");
@@ -101,10 +103,9 @@ module.exports = function (share_obj) {
             userId = socket.handshake.session.passport.user.user_id.toString();
             userSex = socket.handshake.session.passport.user.sex.toString();
 
-            log.info("User connected");
-            log.info("referer : " + referer);
-            log.info("userId : " + userId);
-            log.info("userSex : " + userSex);
+            log.warn("User connected");
+            log.warn("referer : " + referer);
+            log.warn("userId : " + userId);
         }
         catch (e) {
             if (userId === undefined) {
@@ -133,7 +134,7 @@ module.exports = function (share_obj) {
 
                 //for men only
                 if (userSex === '1') {
-                    log.info("Man connected to videoDate with id "+id);
+                    log.info("Man connected to videoDate with id "+userId);
                     io.sockets.in(userId).emit('credits left', {'tokens': user_tokens[userId]})
                 }
             }
@@ -200,19 +201,25 @@ module.exports = function (share_obj) {
         socket.on('request for date beginning', function (data) {
             log.info('Opening user\'s videodate window');
 
-            if (videodates_windows[userId]===undefined ||
-                videodates_windows[userId].length === 0) {
+            /*TODO fix*/
+            if (true||videodates_windows[userId] === undefined ||
+                videodates_windows[userId] === 0) {
                 openVideodateWindow(data, userId, userSex);
+            }
+            else{
+
+                log.error("Videodate window is already opened!")
+                log.error(videodates_windows[userId])
             }
         });
 
         //data manipulation on video_date start
         socket.on('video started', function (room) {
 
-            if (room===undefined)
+            if (!room)
                 return;
 
-            roomDataObject[room] = roomDataObject[room]===undefined ? roomDataObject[room] : {};
+            roomDataObject[room] = roomDataObject[room]? roomDataObject[room] : {};
 
             //check for done videodate
             if (roomDataObject[room].dateEnd) {
@@ -229,10 +236,10 @@ module.exports = function (share_obj) {
             log.info('Video started in room ' + room);
 
 
-            current_partners[room] = current_partners[room]===undefined ? current_partners[room] : [];
+            current_partners[room] = current_partners[room] ? current_partners[room] : [];
 
-
-            if (current_partners[room].contains(userId))
+            /*check if contains*/
+            if (current_partners[room].indexOf(userId)!==-1)
                 return;
 
             current_partners[room].push(userId);
@@ -330,6 +337,7 @@ module.exports = function (share_obj) {
                         //debugger;
                         logCommEnd(_data.room);
                         for (let k in current_partners[_data.room]) {
+                            log.warn('close this connection is emited');
                             io.sockets.in(current_partners[_data.room][k]).emit('close this connection', {'room': _data.room});
                         }
                         //clearInterval(main_timer);
@@ -344,10 +352,10 @@ module.exports = function (share_obj) {
                         if (current_partners[_data.room].length <= 1) {
                             //if it was not closed!
                             logCommEnd(_data.room);
-
-                            if (!roomDataObject[_data.room].dateEnd)
+                            if (roomDataObject[_data.room])
                                 for (let i in current_partners[_data.room]) {
                                     //clearInterval(this);
+                                    log.warn('close this connection is emited');
                                     io.sockets.in(current_partners[_data.room][i]).emit('close this connection', {'room': _data.room})
                                 }
                             clearInterval(extra_timer);
@@ -360,8 +368,14 @@ module.exports = function (share_obj) {
         });
 
         socket.on('disconnect', () => {
-            if (referer && referer.match(/videodate/gi)) {
+            log.warn("User with id "+ userId+" disconnected");
+            log.warn("referer is " + referer);
+
+            //TODO make another check!
+            if (referer && referer.match(/chat_demo\/videodate/gi)) {
                 videodates_windows[userId]=videodates_windows[userId]-1;
+
+                log.info("videodate is closed with referer "+referer);
 
                 for (let i in current_partners) {
                     let index = current_partners[i].indexOf(userId);
@@ -386,55 +400,59 @@ module.exports = function (share_obj) {
 
         client.query(_q, function (err) {
             if (err) {
-                console.log('datesServer.js p 643');
-                console.log(err);
-            }
-        })
-            .on('error', function (err) {
-                console.log('Error during query permChat 456 ', err);
+                log.error(err);
                 delete actual_dates._modyfing;
                 resolve();
-            })
-            .on('row', function (row) { //we have only one row!
-                var data = row.data;
-                var now = new Date();
-                var now_time_zone = now.getTimezoneOffset();
-                var nowNativeZone = now.getTime();//не нужно менять!
+            }
+        })
+        .on('row', function (row) { //we have only one row!
+            const data = row.data;
+            const now = new Date();
+            const now_time_zone = now.getTimezoneOffset();
+            const nowNativeZone = now.getTime();//не нужно менять!
 
-                for (let i in data) {
-                    if (!data.hasOwnProperty(i))
-                        continue;
-                    let _timeout = 0;//minutes
-                    let datingDate = new Date(data[i].date_destination);//äåíü
-                    let time_zone_orderer = -60 * parseInt(data[i].time_zone)//parseFoleat??;//+120/-120
-                    let _start = data[i].time_period;
+            for (let i in data) {
+                if (!data.hasOwnProperty(i))
+                    continue;
+                let _timeout = 0;//minutes
+                let datingDate = new Date(data[i].date_destination);//äåíü
+                let time_zone_orderer = -60 * parseInt(data[i].time_zone)//parseFoleat??;//+120/-120
+                let _start = data[i].time_period;
 
-                    let _start_hours = _start.split(':')[0];
-                    let _start_minutes = _start.split(':')[1];
-                    //ТУТ ВСЕ РАБОТАЕТ! ничего менять нельзя!
-                    let ordDateNativeZone = datingDate.getTime() + (2 * now_time_zone - time_zone_orderer) * 60 * 1000 + _start_hours * 60 * 60 * 1000 + _start_minutes * 60 * 1000;//надо отнять наше время и добавить его время
+                let _start_hours = _start.split(':')[0];
+                let _start_minutes = _start.split(':')[1];
 
-                    _timeout = Math.ceil((ordDateNativeZone - nowNativeZone) / 1000 / 60 / 60);//mins
+                //ТУТ ВСЕ РАБОТАЕТ! ничего менять нельзя!
+                let ordDateNativeZone = datingDate.getTime() + (2 * now_time_zone - time_zone_orderer) * 60 * 1000 + _start_hours * 60 * 60 * 1000 + _start_minutes * 60 * 1000;//надо отнять наше время и добавить его время
 
-                    if (_timeout == 30 || _timeout == 60 || _timeout == 15 || _timeout == 5 || _timeout == 2) {
-                        io.sockets.in(/*MAN_ID*/data[i].user_id).emit('videodate reminder', _timeout);
-                    }
+                _timeout = Math.ceil((ordDateNativeZone - nowNativeZone) / 1000 / 60 / 60);//mins
+
+                if (_timeout === 30 ||
+                    _timeout === 60 ||
+                    _timeout === 15 ||
+                    _timeout === 5 ||
+                    _timeout === 2) {
+                    io.sockets.in(/*MAN_ID*/data[i].user_id).emit('videodate reminder', _timeout);
                 }
-                res.status(200).end();
-            })
+            }
+            res.status(200).end();
+        })
     });
 
 };//exports
 
 function sendActualPartnerInfo(user_id, sex) {
     console.log('sendActualPartnerInfo function');
-    if (!establish_connection[user_id])
-        return;
-    var room = establish_connection[user_id].data;
-    console.log('room');
-    console.log(room);
 
-    var _data = {};
+    if (!establish_connection[user_id]){
+        log.error("Object establish_connection[user_id] is empty! WEIRD");
+        return;
+    }
+
+    const room = establish_connection[user_id].data;
+    log.info("Room to send Actual partner info is " + room);
+
+    const _data = {};
     _data.room = room;
     _data.user_id = user_id;
     _data.sex = sex;
@@ -444,7 +462,8 @@ function sendActualPartnerInfo(user_id, sex) {
     getPartnerInfo(_data.room);
     roomDataObject[_data.room]._modyfing.then(() => {
         delete roomDataObject[_data.room]._modyfing;
-        if (_data.sex == '1')
+
+        if (_data.sex.toString() === '1')
             io.sockets.in(_data.user_id).emit('partner actual data', roomDataObject[_data.room].woman);
         else
             io.sockets.in(_data.user_id).emit('partner actual data', roomDataObject[_data.room].man);
@@ -453,56 +472,79 @@ function sendActualPartnerInfo(user_id, sex) {
 
 function sendRoomToOpen(user_id, sex) {
     console.log('sendRoomToOpen function');
-    if (!establish_connection[user_id])
+
+    if (!establish_connection[user_id]){
+        log.error("Object establish_connection[user_id] is empty! Weird");
         return;
+    }
+
+
     establish_connection[user_id]._modifying = establish_connection[user_id]._modifying ? establish_connection[user_id]._modifying : Promise.resolve();
     establish_connection[user_id]._modifying.then(() => {
 
-        var room = establish_connection[user_id].data;
+        let room = establish_connection[user_id].data;
         delete establish_connection[user_id]._modifying;
 
         actual_dates._modyfing = actual_dates._modyfing ? actual_dates._modyfing : Promise.resolve();
 
         actual_dates._modyfing.then(() => {
             delete actual_dates._modyfing;
-            var _timeout = 0;
-            var data = actual_dates.data;
+            let _timeout = 0;
+
+            const data = actual_dates.data;
+
+            /*TODO check is OK*/
             for (let i in data) {
-                if (data[i].service_order_id && data[i].service_order_id == room) {
-                    var now = new Date();
-                    var datingDate = new Date(data[i].date_destination);//from db
-                    var now_time_zone = now.getTimezoneOffset();
-                    var time_zone_orderer = -60 * parseInt(data[i].time_zone);//if only integer numbers available
-                    var _start = data[i].time_period;
-                    var _start_hours = _start.split(':')[0];
-                    var _start_minutes = _start.split(':')[1];
-                    _timeout = datingDate.getTime()
-                        + (2 * now_time_zone - time_zone_orderer) * 60 * 1000
-                        + _start_hours * 60 * 60 * 1000
-                        + _start_minutes * 60 * 1000 - now.getTime();
+                if (data[i].service_order_id && data[i].service_order_id.toString() === room.toString()) {
+                    let concrete_data=data[i];
+                    let concrete_time_zone=concrete_data.time_zone?"GMT"+concrete_data.time_zone:"";
+
+                    const dateStrignFormat=concrete_data.date_destination
+                        +" "
+                        +concrete_data.time_period
+                        +" "
+                        +concrete_time_zone;
+
+                    log.special("dateStrignFormat")
+                    log.special(dateStrignFormat);
+
+                    const currentDate = new Date();//from db
+                    const dateDate = new Date(dateStrignFormat);//from db
+
+                    _timeout=dateDate.getTime()-currentDate.getTime();
+
+                    log.special(_timeout);
+
                     break;
                 }
             }
 
-            //if we are late!
-            console.log(_timeout >= -10 * 60 * 1000 && _timeout <= 0);
-            console.log(_timeout < -10 * 60 * 1000);
-            if (_timeout >= -10 * 60 * 1000 && _timeout <= 0)
-                _timeout = 1500;
+            log.error("timeout is "+_timeout);
 
+            const TEN_MINUTES=10 * 60 * 1000;
 
-            else if (_timeout < -10 * 60 * 1000) {
+            /*OVERDUE only for 10 MINUTES*/
+            if (_timeout < 0 && Math.abs(_timeout )<= TEN_MINUTES/*DATE_FULL_TIME*/) {
+                log.special("Videodeate is OVERDUE");
+                _timeout = 1500; //1.5s
+            }
+            else
+                if (_timeout >= 0 && _timeout >= TEN_MINUTES
+                    ||
+                    _timeout < 0 && Math.abs(_timeout )>= TEN_MINUTES
+                ) {
+                log.special("Videodeate is NOT IN RANGE");
+
                 setTimeout(function () {
                     io.sockets.in(user_id).emit('close this connection', {'force': true});
                 }, 1500);
+
                 return;
             }
-            console.log('timeout');
-            console.log(_timeout);
-            //_timeout=5000;
+
+            log.warn('Timeout before date start is '+_timeout);
 
             setTimeout(function () {
-                //debugger;
                 io.sockets.in(user_id).emit('connect to the room', room)
             }, _timeout);
         })
@@ -510,27 +552,28 @@ function sendRoomToOpen(user_id, sex) {
 }
 
 function getChatRate() {
-    var _q = 'select row_to_json(q) from (select * from public.finance_service_type)q'
-    var query = client.query(_q);
+    const _q = 'select row_to_json(q) from (select * from public.finance_service_type)q'
+    let query = client.query(_q);
 
     query.on('row', (row) => {
         //fullRateType=row;
-        for (var i in row) {
+        for (let i in row) {
             rateChatType[row[i].service_type] = row[i].price_per_unit;
         }
 
     })
         .on('error', (err) => {
-            console.log('dateServerHTTPS p 12312')
-            console.log(err)
+            log.error(err)
         })
 }
 
 function getPartnerInfo(room) {
-    console.log('getPartnerInfo function');
+
     roomDataObject[room] = roomDataObject[room] ? roomDataObject[room] : {};
+
     roomDataObject[room]._modyfing = new Promise((resolve, reject) => {
-        var _q = "select  json_agg(row_to_json(q)) \
+
+        const _q = "select  json_agg(row_to_json(q)) \
 		from (select u.user_id::text,sex::text,firstname::text from user_profile u,\
 		lateral(select user_id,view_user_id from user_service_order where service_order_id='" + room + "')q \
 		where u.user_id=q.user_id or u.user_id=q.view_user_id)q";
@@ -539,55 +582,42 @@ function getPartnerInfo(room) {
 
         client.query(_q, function (err) {
             if (err) {
-                //client.end();
-                console.log('Error datesServerHtttps 530')
-                console.log(err);
+                log.error(err);
                 delete roomDataObject[room]._modyfing;
                 resolve();
             }
         })
-            .on('row', function (row) {
-                for (var i in row.json_agg) {
-                    if (row.json_agg[i].sex == "1") {
-                        roomDataObject[room].man = row.json_agg[i];
-                    }
-                    else {
-                        roomDataObject[room].woman = row.json_agg[i]
-                    }
+        .on('row', function (row) {
+            for (let i in row.json_agg) {
+                if (row.json_agg[i].sex == "1") {
+                    roomDataObject[room].man = row.json_agg[i];
                 }
-            })
-
-            .on('end', function () {
-                //client.end()
-                delete roomDataObject[room]._modyfing;
-                resolve();
-            })
+                else {
+                    roomDataObject[room].woman = row.json_agg[i]
+                }
+            }
+        })
     });
 }
 //======FUNCTION TO WORK WITH DB
 function eatExtraRoomTokens(room) {
     if (roomDataObject[room].dateEnd) {
-        console.log('some other part closed videodate!');
         return
     }
-    console.log('eatExtraRoomTokens function')
-    console.log(typeof(room));
-    console.log(room);
 
-    const TYPE_EXTRA_VMIN = 19
-    console.log('function monitorRoomTokens')
+    const TYPE_EXTRA_VMIN = 19;
 
     user_tokens.actual = user_tokens.actual ? user_tokens.actual : Promise.resolve();
     user_tokens.actual.then(function () {
         //delete user_tokens.actual;
         //determine man_id in room
-        var man_id;
-        var woman_id;
-        var balance;
+        let man_id;
+        let woman_id;
+        let balance;
         console.log(current_partners[room]);
         for (let i in current_partners[room]) {
-            var uid = current_partners[room][i];
-            if (typeof(user_tokens[uid]) != 'undefined') {
+            let uid = current_partners[room][i];
+            if (user_tokens[uid] !== undefined) {
                 man_id = uid;
                 balance = user_tokens[uid];
             }
@@ -598,128 +628,125 @@ function eatExtraRoomTokens(room) {
 
         if (balance < rateChatType[TYPE_EXTRA_VMIN]) {
             //tokens is over!!!!!!
-            console.log(current_partners[room]);
-            console.log('closing connection');
-            // debugger
             logCommEnd(room);
             for (let i in current_partners[room]) {
-                console.log('close this connection', current_partners[room][i]);
                 io.sockets.in(current_partners[room][i]).emit('close this connection', {'room': room});
             }
         }
         else {
+            log.warn('credits left event emit');
             io.sockets.in(man_id).emit('credits left', {'tokens': (balance - rateChatType[TYPE_EXTRA_VMIN])});
-
+            log.warn('videodate for additional money event emit');
             io.sockets.in(man_id).emit('videodate for additional money', {'room': room});
-            console.log('users data inside additional tokens eating');
 
-            var _data = {
+            const _data = {
                 'user_id': man_id,
                 'room': room,
                 'tokens': rateChatType[TYPE_EXTRA_VMIN],
                 'woman_id': woman_id
             };
-            console.log(_data);
+
             eatToken(_data);
         }
     })
 }
 
 function returnTokens(data) {
-    console.log('fucntion returnTokens');
+    const user_id = data.user_id;
+    const room = data.room;
+    const tokens = data.tokens;
+    const woman_id = data.woman_id;
 
-    var user_id = data.user_id;
-    var room = data.room;
-    var tokens = data.tokens;
-    var woman_id = data.woman_id;
-
-    var _q = "INSERT INTO public.user_credit(\
+    const _q = "INSERT INTO public.user_credit(\
 				men_id, women_id, credit, credit_type, service_type,count)\
 		VALUES ('" + user_id + "','" + woman_id + "','" + tokens + "','5','3','" + tokens + "')";
 
-    console.log(_q);
 
     client.query(_q, function (err, result) {
         if (err) {
-            console.log('error during query p3451');
-            console.log(err);
+            log.error(err);
         }
-    })
-        .on('end', function () {
-        });
+    });
 }
-function eatToken(data) {
-    console.log('fucntion eatToken');
-    console.log(data);
-    var user_id = data.user_id;
-    var room = data.room;
-    var tokens = data.tokens;
-    var woman_id = data.woman_id;
 
-    var _q = "INSERT INTO public.user_credit(\
+function eatToken(data) {
+    const user_id = data.user_id;
+    const room = data.room;
+    const tokens = data.tokens;
+    const woman_id = data.woman_id;
+
+    const _q = "INSERT INTO public.user_credit(\
 				men_id, women_id, credit, credit_type, service_type,count)\
 		VALUES ('" + user_id + "','" + woman_id + "','" + tokens + "','2','3','" + tokens + "')";
 
-    console.log(_q);
-
     client.query(_q, function (err, result) {
         if (err) {
-            console.log('error during query p331');
-            console.log(err);
-            //in case of error
-            if (room) {
+            log.error(err);
+
+           if (room) {
                 logCommEnd(room);
+
                 for (let i in current_partners[room]) {
                     io.sockets.in(current_partners[room][i]).emit('close this connection', {'room': room});
                 }
             }
 
         }
-    })
-        .on('end', function () {
-        })
-
+    });
 }
 
 function openVideodateWindow(data, user_id, sex) {
-    console.log('function openVideodateWindow');
+    log.info("Request to open videoDate vindow from user "+user_id);
+
+    const CHAT_STATUS_ENDED=3;
 
     establish_connection._modifying = new Promise((resolve, reject) => {
-        console.log({data : concrete_user_dates[user_id].data})
-        for (var i in concrete_user_dates[user_id].data) {
-            if (concrete_user_dates[user_id].data[i].service_order_id == data.date_id) {
+
+        log.info(JSON.stringify(data));
+        log.info(JSON.stringify(concrete_user_dates[user_id]));
+
+        for (let i in concrete_user_dates[user_id].data) {
+            if (concrete_user_dates[user_id].data[i].service_order_id.toString() === data.date_id.toString()) {
                 establish_connection[user_id] = establish_connection[user_id] ? establish_connection[user_id] : {};
                 establish_connection[user_id].data = data.date_id;
+
+                //TODO check chat statuses with constants!
+                //TODO fix BAG HERE roomDataObject is undefined!!!!
                 //check date actuality
-                if (concrete_user_dates[user_id].data[i].chat_status == 3 || roomDataObject[data.date_id] && roomDataObject[data.date_id].dateEnd) {
+                if (concrete_user_dates[user_id].data[i].chat_status === CHAT_STATUS_ENDED ||
+                    roomDataObject[data.date_id]!==undefined
+                    && roomDataObject[data.date_id].dateEnd) {
+                    log.info('this videodate is not actual anymore event fired');
                     io.sockets.in(user_id).emit('this videodate is not actual anymore');
                     return;
                 }
 
-                var _data = {'sex': sex};
-                console.log('open videodate window dlskhfkdjhflkh');
+                const _data = {'sex': sex};
+                log.info('open videodate window event fired');
                 io.sockets.in(user_id).emit('open videodate window', _data);
                 delete establish_connection[user_id]._modifying;
                 resolve();
-                break;
+                return;
             }
         }
+
+        log.error("Videodate with id "+data.date_id+ "was not found!")
     })
 }
 
 function sendActualTimers(user_id, sex) {//id sex
-    console.log('sendActualTimers fucntion');
-    var data_for_send = [];
-    concrete_user_dates[user_id] = concrete_user_dates[user_id] ? concrete_user_dates[user_id] : {};
+    const data_for_send = [];
+    concrete_user_dates[user_id] = concrete_user_dates[user_id]!==undefined ? concrete_user_dates[user_id] : {};
 
     actual_dates._modyfing = actual_dates._modyfing ? actual_dates._modyfing : Promise.resolve();
-    actual_dates._modyfing.then(function () {
-        console.log({actual_dates});
-        concrete_user_dates[user_id].actual = false;
-        for (let i in actual_dates.data) {
 
-            if (actual_dates.data[i].user_id == user_id
-                || actual_dates.data[i].view_user_id == user_id) {
+    actual_dates._modyfing.then(function () {
+
+        concrete_user_dates[user_id].actual = false;
+
+        for (let i in actual_dates.data) {
+            if (actual_dates.data[i].user_id.toString() === user_id
+                || actual_dates.data[i].view_user_id.toString() === user_id) {
                 data_for_send.push(actual_dates.data[i])
             }
         }
@@ -731,55 +758,47 @@ function sendActualTimers(user_id, sex) {//id sex
         concrete_user_dates[user_id].actual = true;
     })
 }
+
 //getting all dates in database (1 day back max) (if we in -12 GMT)
 function getAllDates(resolve, reject) {
-    console.log('GET ALL DATES')
-    console.log('GET ALL DATES')
-    console.log('GET ALL DATES')
-    console.log('GET ALL DATES')
-    console.log('GET ALL DATES')
-    var _q = "select json_agg(row_to_json(q)) as result \
+    log.warn('RETRIEVING ALL DATES INFO');
+
+    const _q = "select json_agg(row_to_json(q)) as result \
 		from (select service_order_id::text, user_id, view_user_id, user_status, date_create, \
 type, message, time_zone, date_destination, time_period, contact_phone, \
 alternate_contact_phone, contact_email, manager_status, view_user_status,\
 view_user_delete_flag, user_delete_flag, credit_id, user_saw, \
-view_user_saw from public.user_service_order where type=3 and view_user_status=2 "+/*and date_destination>=(now()::date-interval'1 day')*/")q";
+view_user_saw from public.user_service_order where type=3 and view_user_status=2 " + /*and date_destination>=(now()::date-interval'1 day')*/")q";
 
     client.query(_q, function (err) {
-        if (err) {
-            console.log('datesServer.js p 643');
-            console.log(err);
-        }
-    })
-        .on('error', function (err) {
-            console.log('Error during query permChat 333 ', err);
-            delete actual_dates._modyfing;
-            resolve();
+            if (err) {
+                log.error(err);
+
+                delete actual_dates._modyfing;
+                resolve();
+            }
         })
         .on('row', function (row) { //we have only one row!
-
-            console.log('DATESERVER', {row})
             actual_dates.data = row.result;
         })
-
         .on('end', function () {
             delete actual_dates._modyfing;
             resolve();
         })
 }
+
 //DB LOGGER for start
 function logCommStart(data) {
-    console.log('logLiveChatStrat');
-
-    var reciver_id = data.reciver_id,
+    const reciver_id = data.reciver_id,
         sender_id = data.sender_id,
         reciver_sex = data.reciver_sex,
         message = data.message,
         chat_type = data.chat_type,
         user_chat_call_id = data.room;
-    var sender_sex = reciver_sex == 1 ? 2 : 1;
 
-    var _q = "INSERT INTO public.user_chat_call(\
+    const sender_sex = reciver_sex === '1' ? '2' : '1';
+
+    const _q = "INSERT INTO public.user_chat_call(\
 		user_chat_call_id,from_user, to_user, message, view_flag,  \
 		chat_type, sex_sender,chat_status,end_date)\
 VALUES ('" + user_chat_call_id + "','" + sender_id + "', '" + reciver_id + "', '" + message + "', false, '" + chat_type + "', \
@@ -788,35 +807,27 @@ VALUES ('" + user_chat_call_id + "','" + sender_id + "', '" + reciver_id + "', '
     console.log(_q);
 
     client.query(_q, function (err) {
-
-    })
-        .on('end', function () {
-        })
-
-        .on('error', (err) => {
-            console.log(err)
-        })
-
+        if(err){
+            log.error(err);
+        }
+    });
 }
 //DB LOGGER for end
 function logCommEnd(room) {
-    console.log('logCommEnd');
-    var _q = "UPDATE public.user_chat_call\
+
+    const _q = "UPDATE public.user_chat_call\
 			SET end_date=now(),chat_status='3'\
 			WHERE user_chat_call_id='" + room + "' and chat_status='2';";
+
     console.log(_q);
 
     client.query(_q, function (err) {
         if (err) {
-            console.log('logCommEnd error ')
-            console.log(err)
+            log.error(err);
             roomDataObject[room].dateEnd = false;
         }
     })
-        .on('error', (err) => {
-            console.log(err)
-        })
-        .on('end', function () {
-            roomDataObject[room].dateEnd = true;
-        });
+    .on('end', function () {
+        roomDataObject[room].dateEnd = true;
+    });
 }

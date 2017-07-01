@@ -1,6 +1,14 @@
 // Muaz Khan      - www.MuazKhan.com
 // MIT License    - www.WebRTC-Experiment.com/licence
 // Documentation  - github.com/muaz-khan/RTCMultiConnection
+const tls=require('tls');
+const pg=require('pg');
+const  fs=require('fs');
+
+const cookieParser = require('cookie-parser')();
+const session = require('cookie-session')({ secret: 'securedsession' });
+
+const log=require("./collor-logger");
 
 module.exports = exports = function(app, socketCallback) {
     // stores all sockets, user-ids, extra-data and connected sockets
@@ -11,29 +19,44 @@ module.exports = exports = function(app, socketCallback) {
     var shiftedModerationControls = {};
 
     // for scalable-broadcast demos
+
     var ScalableBroadcast;
+
+    console.log('videoWebRTCServer.js');
+    app.use(session);
+    var parsedJSON=require(app.dir+'/config/configServer.json');
+    var videoConf=parsedJSON.webRTCVideo;
+
+    var PORT=videoConf.server.portHTTPS;//порт сервера
+
+    log.info ("videoWebRTCSERver listening on "+PORT);
+
+    server = require('https').createServer(app.secureOptions, app);
+
 
     var io = require('socket.io');
 
-    try {
-        // use latest socket.io
-        io = io(app);
-        io.on('connection', onConnection);
-    } catch (e) {
-        // otherwise fallback
-        io = io.listen(app, {
-            log: false,
-            origins: '*:*'
+
+    io = require('socket.io').listen(server,{
+        transports: [ 'xhr-polling', 'websocket','polling' ]
+    });
+
+    io.use(function(socket, next) {
+        var req = socket.handshake;
+        var res = {};
+        cookieParser(req, res, function(err) {
+            if (err) return next(err);
+            session(req, res, next);
         });
+    });
 
-        io.set('transports', [
-            'websocket',
-            'xhr-polling',
-            'jsonp-polling'
-        ]);
+    io.sockets.on('connection', onConnection);
 
-        io.sockets.on('connection', onConnection);
-    }
+    //запускаем сервер
+    server.listen(PORT,function(){
+        log.info('videoWebRTCServer server listening at '+PORT);
+    });
+
 
     // to secure your socket.io usage: (via: docs/tips-tricks.md)
     // io.set('origins', 'https://domain.com');
@@ -69,6 +92,7 @@ module.exports = exports = function(app, socketCallback) {
     }
 
     function onConnection(socket) {
+
         var params = socket.handshake.query;
         var socketMessageEvent = params.msgEvent || 'RTCMultiConnection-Message';
 
@@ -92,6 +116,7 @@ module.exports = exports = function(app, socketCallback) {
         }
 
         socket.userid = params.userid;
+        log.warn("webRtcServer Connection with id "+socket.userid );
         appendUser(socket);
 
         if (autoCloseEntireSession == 'false' && sessionid == socket.userid) {
@@ -431,6 +456,13 @@ module.exports = exports = function(app, socketCallback) {
             }
         });
 
+        //ТОДО должно вылазить предложение видеосвидания!
+        socket.on('date me event',function(){
+            console.log('someone want date you',user_id);
+            var address=user_id;//все сокеты одного пользователя в одну комнату
+            io.sockets.in(address)
+        });
+
         socket.on('disconnect', function() {
             try {
                 if (socket && socket.namespace && socket.namespace.sockets) {
@@ -498,7 +530,6 @@ try {
     enableLogs = false;
 }
 
-var fs = require('fs');
 
 function pushLogs() {
     if (!enableLogs) return;

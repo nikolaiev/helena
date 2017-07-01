@@ -18,42 +18,45 @@ var user_tokens;
 var rateChatType = {};
 var paidFiles = {};//videos and photos paid by men
 
-
+const log=require('./collor-logger');
 module.exports = function (share_obj) {
     console.log("--------------------------------date------------------------------")
-    app = share_obj;
+    app = share_obj.app;
     user_tokens = share_obj.user_tokens;
 
     //app.use(session);
-    var configMail = require(app.dir + '/config/helena/mailConfig.json');
-    var PORT = configMail.port;//порт сервера
+    const configMail = require(app.dir + '/config/helena/mailConfig.json');
+    const PORT = configMail.port;//порт сервера
     // server = require('https').createServer(app.secureOptions, app)
 
-    var fileConfg = require(app.dir + '/config/helena/filesServer.json');
+    const fileConfg = require(app.dir + '/config/helena/filesServer.json');
     conString = 'pg://' + fileConfg.dataBase.admin + ':' + fileConfg.dataBase.pass + '@' + fileConfg.dataBase.host + ':' + fileConfg.dataBase.port + '/' + fileConfg.dataBase.dbname;
-    console.log('\n\n\n\n\n ' + conString)
+
+    log.info(conString)
+
     client = new pg.Client(conString);
 
     client.connect((err) => {
-        console.log(err);
+        if(err){
+            log.error(err);
+            return;
+        }
         getChatRate();
         getPaidFiles();//videos and photos paid by men
-    })
+    });
 
     io = require('socket.io');//запускаем сервер
-    app.portInUse(PORT, function(used) {
-        console.log({used});
-        io = io.listen(PORT, function () {
-            console.log('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 
-            console.log('helena main server listening at ' + PORT);
-        });//server,{});
-    io.set("transports", ["xhr-polling", "polling", 'websocket']);
+    io = io.listen(PORT, function () {
+        log.info('helena main server listening at ' + PORT);
+    });//server,{});
+
+        io.set("transports", ["xhr-polling", "polling", 'websocket']);
 
     //шарим сокетам данные пасспорта
     io.use(function (socket, next) {
-        var req = socket.handshake;
-        var res = {};
+        const req = socket.handshake;
+        const res = {};
         cookieParser(req, res, function (err) {
             if (err) return next(err);
             session(req, res, next);
@@ -86,7 +89,7 @@ module.exports = function (share_obj) {
         }
     })
 
-    })
+
 
     app.get('/helena/get_sex', function (req, res) {
         var user_sex = req.session.passport.user.sex;
@@ -1260,11 +1263,11 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
         app.getDB(req, res, function (db, req) {
             var _q = "SELECT data as timezone,(select data  FROM admin.doc_cls where parent\
 			  		 =11 and id = " + req.session.passport.user.map_city_id + ") as my_tz,to_char((('" + time + "'::time -  (SELECT data::text FROM admin.doc_cls where parent =11 \
-				and id = (select map_city_id from user_profile where user_id = " + req.session.passport.user.user_id.toString() + "))::interval)  + data::interval),'HH24') as time,\
+				and id = (select map_city_id::text from user_profile where user_id = " + req.session.passport.user.user_id.toString() + "))::interval)  + data::interval),'HH24') as time,\
 					to_char(( ((('" + req.body.date + "'::date || ' '||'" + time + "'::time)::timestamp -  (SELECT data::text FROM admin.doc_cls where parent =11 \
-				and id = (select map_city_id from user_profile where user_id = " + req.session.passport.user.user_id.toString() + "))::interval) \
+				and id = (select map_city_id::text from user_profile where user_id = " + req.session.passport.user.user_id.toString() + "))::interval) \
 				+ data::interval))::date,'DD.MM.YYYY') as date_user  FROM admin.doc_cls where parent\
-			  		 =11 and id = (select map_city_id from user_profile where user_id = " + req.body.user_2 + ")"
+			  		 =11 and id = (select map_city_id::text from user_profile where user_id = " + req.body.user_2 + ")"
 
             app.pg_request({
                 'conString': db.conString,
@@ -1281,11 +1284,8 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
 
 
     app.post('/helena/send_video_date/', function (req, res) {
-        var TYPE_VIDEODATE = 16;
-        var user_id = req.session.passport.user.user_id.toString();
-        console.log('/helena/send_video_date/');
-        console.log(user_tokens[user_id]);
-        console.log(rateChatType[TYPE_VIDEODATE]);
+        let TYPE_VIDEODATE = 16;
+        let user_id = req.session.passport.user.user_id.toString();
 
         if (user_tokens[user_id] < rateChatType[TYPE_VIDEODATE])
             return res.send({'result': 'error', 'description': 'not enought tokens'});
@@ -1293,7 +1293,7 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
         app.getDB(req, res, function (db, req) {
             res.cacheControl({'no-cache': true});
 
-            var _q = "INSERT INTO user_service_order(user_id, view_user_id, type, time_zone,date_destination,time_period,user_status) \
+            const _q = "INSERT INTO user_service_order(user_id, view_user_id, type, time_zone,date_destination,time_period,user_status) \
 					VALUES('" + req.session.passport.user.user_id.toString() + "','" + req.body.partner_id.toString() + "',3,'" + req.body.time_zone.toString() + "','" + req.body.date_destination.toString() + "','" + req.body.time_from.toString() + /*" - "+req.params.time_to.toString()+*/"',2);\
 					insert into  user_credit (men_id,women_id,credit,credit_type,service_type) \
 	values (" + req.session.passport.user.user_id.toString() + "," + req.body.partner_id.toString() + ",\
@@ -1304,28 +1304,25 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
 					select (Select count(user_id) as notsaw From user_service_order_view where (user_id='" + req.body.partner_id.toString() + "' \
 					or view_user_id='" + req.body.partner_id.toString() + "') and type=3 and " + ((req.session.passport.user.sex == 2) ? (" user_saw is false") : (" view_user_saw is false")) + "),(\
 			 Select count(to_user_id) as notRead from user_messages_view where " + ((req.session.passport.user.sex == 1) ? ("visible_male") : ("visible_female")) + " is true and to_user_id='" + req.body.partner_id + "' and is_view = false)";
-            console.log("--------------------------------------");
-            console.log(_q);
-            console.log("--------------------------------------");
+
             app.pg_request({
                 'conString': db.conString,
                 'res': res,
                 'req': req,
                 'app': app
             }, _q, function (err, result, res) {
-                console.log(result);
-                var _q = "";
-                var message = "" + req.body.time_zone.toString() + " " + req.body.date_destination.toString() + " " + req.body.time_from.toString() + "";
-                var user_id = req.body.partner_id;
-                var data = {
+                let _q = "";
+                const message = "" + req.body.time_zone.toString() + " " + req.body.date_destination.toString() + " " + req.body.time_from.toString() + "";
+                const user_id = req.body.partner_id;
+                const data = {
                     'id': req.session.passport.user.user_id,
                     'notsaw': result.notsaw,
                     'notread': result.notread,
                     'firstname': req.session.passport.user.firstname,
                     'lastname': req.session.passport.user.lastname,
                     'message': message
-                }
-                console.log(result);
+                };
+
                 res.json('done');
                 io.sockets.in(user_id).emit('SendVideoDate', data);
             });
@@ -1357,23 +1354,23 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
 
              select to_char(( '"+_json.time_from.toString()+"' -  '3 hour'::interval)  + data::interval,'HH24') FROM admin.doc_cls where parent
 
-             =11 and id = (select map_city_id from user_profile where user_id = "+req.session.passport.user.user_id+")
+             =11 and id = (select map_city_id::text from user_profile where user_id = "+req.session.passport.user.user_id+")
 
 
              select
 
              ( ((('"+_json.date_destination.toString()+"' || ' '||'"+_json.time_from.toString()+"')::timestamp )  - data::interval))::date FROM admin.doc_cls where parent
 
-             =11 and id = (select map_city_id from user_profile where user_id =  "+req.session.passport.user.user_id+")
+             =11 and id = (select map_city_id::text from user_profile where user_id =  "+req.session.passport.user.user_id+")
 
              */
             var _q = `INSERT INTO user_service_order(user_id, view_user_id, type,time_period, date_destination,user_status) 
 					VALUES('${req.session.passport.user.user_id.toString()}','${_json.partner_id.toString()}',3,
 					(select to_char(( '${_json.time_from.toString()}' )  - data::interval,'HH24') FROM admin.doc_cls where parent 
-						=11 and id = (select map_city_id from user_profile where user_id = ${req.session.passport.user.user_id}))
+						=11 and id = (select map_city_id::text from user_profile where user_id = ${req.session.passport.user.user_id}))
 					||':00',(select  ((('${_json.date_destination.toString()}'::date || ' '||'${_json.time_from.toString()}')::timestamp ) 
                      - data::interval)::date FROM admin.doc_cls where parent =
-						11 and id = (select map_city_id from user_profile where user_id = ${req.session.passport.user.user_id})),2);
+						11 and id = (select map_city_id::text from user_profile where user_id = ${req.session.passport.user.user_id})),2);
 					insert into  user_credit (men_id,women_id,credit,credit_type,service_type) 
                 	values (${req.session.passport.user.user_id.toString()},${_json.partner_id.toString() },
                 	(select price_per_unit from finance_service_type where service_type=${TYPE_VIDEODATE}),2,${TYPE_VIDEODATE});
@@ -1497,10 +1494,10 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
             var _q = `INSERT INTO user_service_order(user_id, view_user_id, type, time_period,date_destination,contact_phone,alternate_contact_phone,user_status) 
 					VALUES('${user_id.toString()}','${_json.partner_id.toString()}',1,(select to_char(( '${_json.time_from.toString()}' )  - data::interval,'HH24') 
                     FROM admin.doc_cls where parent 
-						=11 and id = (select map_city_id from user_profile where user_id = ${req.session.passport.user.user_id}))
+						=11 and id = (select map_city_id::text from user_profile where user_id = ${req.session.passport.user.user_id}))
 					||':00',(select  ((('${_json.date_destination.toString()}'::date || ' '||'${_json.time_from.toString()}
                 ')::timestamp )  - data::interval)::date FROM admin.doc_cls where parent =
-						11 and id = (select map_city_id from user_profile where user_id =  ${req.session.passport.user.user_id })),'${phone1}',
+						11 and id = (select map_city_id::text from user_profile where user_id =  ${req.session.passport.user.user_id })),'${phone1}',
 					'${phone2}',2);
 					insert into  user_credit (men_id,women_id,credit,credit_type,service_type) 
 					values (${user_id},${_json.partner_id.toString()},
@@ -1689,10 +1686,10 @@ left join lateral (select array_agg(row_to_json(q.*)) as audios from (select * f
         var _q = "update  user_service_order set " + ((req.session.passport.user.sex == 1) ?
                 " user_status = 2 , view_user_status=1" :
                 " view_user_status=2, user_status =1 ") + " ,time_period=(select to_char(( '" + _json.time_from.toString() + "' )  - data::interval,'HH24') FROM admin.doc_cls where parent \
-		=11 and id = (select map_city_id from user_profile where user_id = " + req.session.passport.user.user_id + "))\
+		=11 and id = (select map_city_id::text from user_profile where user_id = " + req.session.passport.user.user_id + "))\
 						||':00' , date_destination = (select  ((('" + _json.date_destination.toString() + "'::date || ' '||'" + _json.time_from.toString() +
             "')::timestamp )  - data::interval)::date FROM admin.doc_cls where parent =\
-					11 and id = (select map_city_id from user_profile where user_id =  " + req.session.passport.user.user_id + "))   where service_order_id=" + _json.id+";"
+					11 and id = (select map_city_id::text from user_profile where user_id =  " + req.session.passport.user.user_id + "))   where service_order_id=" + _json.id+";"
         //res.json(_q)
 
             let user_query = ((req.session.passport.user.sex == 1)?" view_user_id  ":" user_id ")

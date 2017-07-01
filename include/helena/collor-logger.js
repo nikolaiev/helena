@@ -40,6 +40,11 @@ module.exports=(()=>{
         error:(data)=>{
             let fileAndLine = traceCaller(1);
             console.log('\x1b[31m%s %s \x1b[36m%s\x1b[0m',fileAndLine,"[ERROR]", data);
+        },
+        special:(data)=>{
+            let fileAndLine = traceCaller(1);
+            console.log('\x1b[34m%s %s \x1b[36m%s\x1b[0m',fileAndLine,"[SPECIAL]", data);
+
         }
     }
 })();
